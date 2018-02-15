@@ -17,7 +17,7 @@
 
 using namespace std;
 string FILENAME = "/Users/baileyfreund/Desktop/OS/prog2/sherlock.txt";
-int search (string word, string filename, pid_t p_pid); 
+
 
 // arguments :  arg is an untyped pointer 
 // returns :   a pointer to whatever was passed in to arg 
@@ -43,10 +43,14 @@ int main()
     int status;
     string my_file;
 
-    // Create down pipe
-    int down_pipe[2];
     // Create up pipe
     int up_pipe[2];
+    
+    
+    if (pipe(up_pipe) < 0) {
+        perror ("plumbing problem");
+        exit (1);
+    }
 
     while(!done && fork_flag) {
 
@@ -68,16 +72,6 @@ int main()
                 cout << "looking at file " << files[i] << "\n";
                 if(files[i].find(".txt") != string::npos){ // only search text files
                     my_file = files[i];
-                    if (pipe(down_pipe) < 0) {
-                        perror ("plumbing problem");
-                        exit (1);
-                    }
-                    
-                    
-                    if (pipe(up_pipe) < 0) {
-                        perror ("plumbing problem");
-                        exit (1);
-                    }
                     
                     if(fork_flag){
                         fork_flag = false; // set to false - will cause child not to fork again
@@ -95,64 +89,69 @@ int main()
             } // end if fork flag
         } // end for
 
-        if (pid == 0) { // CHILD
-            cout << pid << " entered child process logic \n";
-            close(down_pipe[WRITE]); // child will only read from down pipe
-            close(up_pipe[READ]); // child will only write to up pipe
 
-            if (dup2( up_pipe[WRITE], STDOUT_FILENO  ) < 0) {
-                cout << "DUP2 FAILED child";
-                exit(1);
+        
+
+        if (pid == 0) { // CHILD
+            //close(up_pipe[READ]); // child will only write to up pipe
+
+            int num = 0;
+            ifstream search_file (my_file); // http://www.cplusplus.com/doc/tutorial/files/
+            if (search_file.is_open())
+            {
+                string line;
+                while ( getline (search_file,line) )
+                {
+                    if( line.find(word) != string::npos){ // look for the word in the line
+                        num++; // increment the number if you find it
+                    } 
+                }
+                search_file.close();
             }
+        
+            int c_pid = getpid();
             
-            search(word, my_file, p_pid);
+            string result = "CHILD: My pid is " + to_string(c_pid) + ", parent's pid is " + to_string(p_pid) + ", found word '" + word + "' " + to_string(num) + " times in file " + my_file + "\n";
+            int size = result.length();
+            // write(up_pipe[WRITE], &size, sizeof(int)); /*ALTERNATE WAY OF IMPLEMENTING WRITE*/
+            perror("CHILD: writing to up_pipe...");
+            write(up_pipe[1], result.c_str(), size);
+            cout << result;
+            perror("CHILD: wrote to up_pipe. Exiting...");
+            sleep(2);
+            exit(0);
+
 
         } else { // PARENT
-            cout << pid << " entered parent process logic \n";
             i_am_the_parent = true;
-            close(down_pipe[READ]); // down pipe is for writing from parent to child
             close(up_pipe[WRITE]); // down pipe is for writing from parent to child
-            cout << "DUP2ING UPPIPE READ TO STDOUT \n";
-            if (dup2(STDOUT_FILENO, up_pipe[READ] ) < 0) { // this seems to be failing
-                cout << "DUP2 FAILED parent";
-                exit(1);
-            }
-            
+            char buf;
             for(int i = 0; i <= num_processes; i++){ // wait for all of the child processes
+                
+                
+                
+                    
+                perror("About to read from pipe error: ");
+                while (read(up_pipe[READ], &buf, 1) > 0){ // loop through the up_pipe
+                    //write(STDOUT_FILENO, &buf, 1);
+                    cout << buf; //print the character
+                    //perror(to_string(buf).c_str());
+                }
                 c_pid = wait(&status);
                 cout << "waited for child " << c_pid << " which returned status " << status << "\n";
+                /*ALTERNATE WAY OF IMPLEMENTING READ*/
+                // int size;
+                // read(up_pipe[READ], &size, sizeof(int));
+                // cout << "got size " << size << "\n";
+                // char * child_result = new char[size];
+                // read(up_pipe[READ], &child_result, size);
+                // cout << "PARENT: result from child: " << child_result << "\n";
+                
             }
 
-            
         }
-
-        cout << " done = " << done << " and fork flag = " << fork_flag << "\n";
     } // end while loop
         
-}
-
-int search (string word, string filename, pid_t p_pid) 
-{ 
-    
-    int num = 0;
-    ifstream search_file (filename); // http://www.cplusplus.com/doc/tutorial/files/
-    if (search_file.is_open())
-    {
-        string line;
-        while ( getline (search_file,line) )
-        {
-            if( line.find(word) != string::npos){
-                // cout << line << "\n";
-                num++;
-            } 
-        }
-        search_file.close();
-    }
-
-    int c_pid = getpid();
-    cout << "CHILD: My pid is " << c_pid << ", parent's pid is " << p_pid << ", found word '" << word << "' " << num << " times " << "in file " << filename << "\n"; 
-    exit(0);
-    //return num;
 }
 
 void read_directory(const string& name, vector<string>& v) // http://www.martinbroadhurst.com/list-the-files-in-a-directory-in-c.html
